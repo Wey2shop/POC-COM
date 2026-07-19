@@ -1,4 +1,11 @@
-Skip the details if your just looking for the build. https://wey2shop.github.io/POC-COM/
+
+Official Website: [POC-COM Project Page](https://wey2shop.github.io/POC-COM)
+
+## Just looking for the build. 
+
+*   [Download for Windows (≈294 MB)](https://github.com/Wey2shop/POC-COM/releases/download/POC-COM/poc-com-windows-x86_64.exe)
+*   [Download for Linux (≈297 MB)](https://github.com/Wey2shop/POC-COM/releases/download/POC-COM/poc-com-linux-x86_64)
+
 
 # POC-COM
 
