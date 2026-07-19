@@ -1,0 +1,5 @@
+/target
+.claude/settings.local.json
+
+# Local test captures / scratch WAVs — not part of the repo
+*.wav
