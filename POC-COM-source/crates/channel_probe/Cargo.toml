@@ -1,6 +1,0 @@
-[package]
-name = "channel_probe"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-description = "Scheme-agnostic real-channel diagnostic signal + analysis: measure what a real audio link does to a known signal before designing a physical layer around it"
