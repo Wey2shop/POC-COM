@@ -1,3 +1,5 @@
+Skip the details if your just looking for the build. https://wey2shop.github.io/POC-COM/
+
 # POC-COM
 
 **Send structured messages and open-board posts over a Push-to-Talk-over-Cellular (PoC) radio using nothing but the voice channel — carried as real speech, with no TTS engine running at send time.**
