@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speaking the Channel: Real TTS + Real ASR as a Data Link — POC-COM</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --ink: #1b1c1f;
+    --ink-soft: #4a4d54;
+    --rule: #ddd8cc;
+    --accent: #8a5a2f;
+    --accent-soft: #f0e6d8;
+    --code-bg: #f2efe6;
+    --error: #a4342a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171a;
+      --ink: #e9e6df;
+      --ink-soft: #b6b2a7;
+      --rule: #35363b;
+      --accent: #d99a5b;
+      --accent-soft: #2a231b;
+      --code-bg: #201f22;
+      --error: #e08a7c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16171a; --ink: #e9e6df; --ink-soft: #b6b2a7; --rule: #35363b;
+    --accent: #d99a5b; --accent-soft: #2a231b; --code-bg: #201f22; --error: #e08a7c;
+  }
+  :root[data-theme="light"] {
+    --bg: #fbfaf7; --ink: #1b1c1f; --ink-soft: #4a4d54; --rule: #ddd8cc;
+    --accent: #8a5a2f; --accent-soft: #f0e6d8; --code-bg: #f2efe6; --error: #a4342a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    line-height: 1.6;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+  h1, h2, h3 { font-family: "Trebuchet MS", "Segoe UI", sans-serif; line-height: 1.25; text-wrap: balance; }
+  h1 { font-size: 1.9rem; margin-bottom: 0.2rem; }
+  .subtitle { color: var(--ink-soft); font-size: 1.05rem; margin-top: 0; }
+  h2 { font-size: 1.3rem; margin-top: 2.6rem; border-bottom: 1px solid var(--rule); padding-bottom: 0.3rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.8rem; color: var(--accent); }
+  p, li { max-width: 68ch; }
+  a { color: var(--accent); }
+  code, pre {
+    font-family: "Cascadia Code", Consolas, "SF Mono", monospace;
+    font-size: 0.88em;
+  }
+  code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+  pre {
+    background: var(--code-bg);
+    padding: 0.9rem 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+  }
+  pre code { background: none; padding: 0; }
+  blockquote {
+    border-left: 3px solid var(--accent);
+    margin: 1.2rem 0;
+    padding: 0.2rem 1rem;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: 0.92em; }
+  th, td { border: 1px solid var(--rule); padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); font-family: "Trebuchet MS", sans-serif; }
+  .history-table td:first-child { white-space: nowrap; font-weight: bold; color: var(--accent); }
+  .callout {
+    background: var(--accent-soft);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 1.4rem 0;
+  }
+  .fail { color: var(--error); }
+  .timeline {
+    list-style: none;
+    padding: 0;
+    margin: 1.2rem 0;
+    border-left: 2px solid var(--rule);
+  }
+  .timeline li { padding: 0 0 1.4rem 1.2rem; position: relative; }
+  .timeline li::before {
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 0.35rem;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .timeline strong { display: block; font-family: "Trebuchet MS", sans-serif; color: var(--accent); }
+  footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<h1>Speaking the Channel</h1>
+<p class="subtitle">A pre-rendered vocabulary of real speech clips as POC-COM's data link — no TTS engine, no external process, no OS-specific API, and four physical layers it took to get here.</p>
+
+<p>
+POC-COM moves structured messages and open-board posts over a
+Push-to-Talk-over-Cellular radio using nothing but the voice audio path —
+no data channel, no API, no paired app on the far end required. Every
+earlier version of this project tried to make that audio path carry a
+purpose-built <em>signal</em>: tones, chirps, frequency-shift-keyed
+symbols, and later live-synthesized speech. Every one of those either
+fought a voice codec (AMR/SILK-family, aggressively tuned to preserve
+human speech and reshape or discard anything that doesn't fit that model)
+or turned out to depend on something that couldn't ship the way the
+project needed to ship — a live TTS engine tied to one operating system.
+This document is the record of that whole progression, why each stage
+ended, and the design that finally stuck.
+</p>
+
+<h2>The current design, in one pass</h2>
+
+<p>
+A message's fields are spelled out as a sequence of <em>tokens</em> —
+NATO phonetic letters, digit words, and the field's own marker word —
+and each token maps to a short, real audio clip that was recorded exactly
+once, offline, and embedded in the binary. Sending a message is pure
+sample-buffer concatenation:
+</p>
+
+<pre><code>READY FROM K J 4 A B C RECIPIENT B A S E LOCATION I O 8 0 SUBJECT S T A T U S MESSAGE A L L SPACE Q U I E T COMPLETE</code></pre>
+
+<p>
+each token's pre-recorded clip is looked up (<code>clips.rs</code>) and
+appended to the output buffer with a fixed, exact gap of digital silence
+in between (<code>modulator.rs</code>'s <code>assemble_from_tokens</code>)
+— no TTS engine runs at send time, on either platform, at all. On the
+receive side, a real Whisper <code>base.en</code> speech-recognition
+model (running via
+<a href="https://github.com/huggingface/candle"><code>candle</code></a>,
+a pure-Rust ML framework — no Python, no network call, the whole model is
+embedded in the binary) transcribes whatever comes out of the radio's
+speaker. Decoding is <em>grammar-constrained</em> (see
+<a href="#phase-8">Phase 8</a> below): at every generation step, the
+model's own logits are masked down to only the tokens that keep the
+output a legal continuation of a known vocabulary word, so nothing
+outside this crate's own ~49-word list can ever come out, structurally.
+The transcript is searched for <code>ready</code>
+and <code>complete</code> as whole words, and the text between each pair
+of field markers (<code>from</code>/<code>recipient</code>/<code>location</code>/
+<code>subject</code>/<code>message</code> for Mail;
+<code>writer</code>/<code>post</code>/<code>link</code>/<code>grid</code>
+for Social) becomes that field's value, reconstructed letter-by-letter
+(<code>phonetic.rs</code>'s <code>unspell</code>).
+</p>
+
+<p>
+Every field is spelled this way now — compact identifiers (callsigns,
+Maidenhead locators) <em>and</em> free text (Subject/Message/Post) alike
+— since there's no live TTS engine left to speak arbitrary
+natural-language sentences directly. A word boundary inside free text is
+itself a spoken token (<code>SPACE</code>), since there's no way to
+recover "where one word ends and the next begins" from transcript text
+alone without one. Social's <code>link</code> field (a URL suffix) also
+spells a literal <code>.</code> as its own token (<code>DOT</code>), since
+a file extension matters for reconstructing a valid link.
+</p>
+
+<div class="callout">
+<strong>Why the previous (live-TTS) design got replaced:</strong> it
+worked, but it was Windows-only (the WinRT/SAPI speech APIs it called
+don't exist on Linux), and this project needs a real Linux release
+build too. Pre-rendering the entire vocabulary once, offline, and
+shipping the resulting clips as embedded data sidesteps the problem
+entirely: clip <em>playback</em> is pure Rust with zero OS dependency, so
+it's identical on both platforms. Only clip <em>generation</em>
+(<code>dev_tts.rs</code>, gated behind a Windows-only, opt-in
+<code>gen-clips</code> Cargo feature that never ships in the app) still
+touches a TTS engine, and only once, by a developer, not at runtime.
+</div>
+
+<p>
+This also turned out to fix a standing reliability question for free:
+since every clip is generated once and shipped as bit-identical data,
+every empirical finding this project makes about which words and pauses
+are reliable stays true forever, on every install — it's no longer at
+the mercy of whichever voice a given machine's TTS engine happens to
+default to (a real, confirmed problem with the previous design: switching
+the default voice changed which words got misheard).
+</p>
+
+<p>
+Pause duration between clips is now a literal, exact number
+(<code>gap_ms</code>) rather than an emergent property of punctuation fed
+to a live TTS engine. It used to be a user-facing Slow/Normal/Fast picker
+(250/150/100ms); real live-hardware testing — not just this app's own
+offline round-trip tests, which pipe assembled audio straight into
+Whisper and never touch a real speaker, microphone, PTT radio, or VAD at
+all — surfaced failures at the fastest setting, so the picker was removed
+in favor of one fixed, more conservative gap (200ms). Widening the gap
+isn't a cure-all, though — one real failure (below, "Reddy, Ryder") turned
+out to be completely unaffected by widening the gap from 60ms to 100ms,
+meaning it wasn't a blending problem at all. A separate 300ms of silence
+is also now prepended before the very first clip of every message — see
+<a href="#phase-6">Phase 6</a> below.
+</p>
+
+<h2>Four tries to get here</h2>
+
+<p>
+Each earlier design is described below roughly in the order it was
+tried, together with the specific, concrete finding that ended it. None of
+these were abandoned on a hunch — each one worked well enough to get real
+end-to-end tests passing before the next problem showed up.
+</p>
+
+<h3>Attempt 1 — tones: chirps, tone-chords, then multi-lane FSK</h3>
+<p>
+The channel bandwidth was split into narrow frequency lanes, each
+continuously transmitting one of a small set of tones or cyclically-shifted
+chirps — first as Helical Spread Modulation (a pilot chirp lane for
+continuous timing/drift correction plus data lanes), later as on/off
+tone-chord keying, and finally as a 3-lane FSK scheme with fountain-coded
+(RaptorQ) redundancy. Each iteration got real-hardware validation and real
+bug fixes (a coarse-to-fine sync search that let the winning candidate
+register as its own runner-up and collapse its confidence margin; a real
+~18-second periodic burst erasure found on live PTT hardware, fixed by
+adding redundancy).
+</p>
+<p class="fail">
+The fundamental problem never went away: a codec built to preserve speech
+actively reshapes or discards anything that doesn't look like speech.
+Every retune bought some more headroom, but the whole approach was
+spending its effort fighting the channel's own priorities rather than
+working with them.
+</p>
+
+<h3>Attempt 2 — a closed dictionary of isolated TTS words</h3>
+<p>
+The insight that flipped the approach: a voice codec passes real speech
+through essentially perfectly, because that is exactly the signal it is
+built to preserve. So instead of a signal shaped to <em>survive</em> being
+misclassified as noise, why not use a signal built to be classified as
+speech in the first place? The first version of that idea pre-rendered a
+closed vocabulary of ~2048 individual English words via TTS, encoded
+arbitrary bytes as sequences of those words (each word standing in for a
+fixed bit pattern), and decoded with Whisper doing per-word closed-set
+classification.
+</p>
+<p class="fail">
+This traded one fight for another. Whisper is a language model as much as
+an acoustic one, and a sequence of grammatically unrelated isolated words
+triggered its own "correction" instinct — it would confidently transcribe
+eight unrelated dictionary words as a fluent-sounding phrase sharing
+almost none of the actual words. Constraining decoding at every generation
+step to only legal dictionary-word continuations (a per-step token trie)
+fixed that specific failure mode completely. But even with hallucination
+eliminated, per-word recognition accuracy on an artificial closed
+vocabulary — compounded by weak, phonetically-reduced function words
+(<code>the</code> → <code>they</code>) sorting to the front of a
+frequency-ordered word list and landing on the most bit-significant
+codes — wasn't reliable enough even for messages a few words long. A real
+test with a compressed 6-byte payload failed its checksum
+non-deterministically depending on exactly which dictionary words that
+particular byte pattern happened to map to.
+</p>
+
+<h3>Attempt 3 — live TTS, real sentences, free-form decode</h3>
+<p>
+The fix was to stop fighting <em>both</em> systems at once. A voice codec
+passes real speech through cleanly. Whisper transcribes real, fluent
+speech accurately — that's the one thing it is unambiguously built and
+trained to do well. Isolated artificial word sequences are the thing that
+breaks both assumptions at once: they're speech-shaped enough to survive
+the codec, but not real language, which is exactly what trips Whisper's
+own correction instinct. Real natural sentences (or, once found unreliable
+on bare alphanumeric identifiers, NATO-phonetic-spelled ones) satisfy both
+systems simultaneously, so there's no adversarial relationship left to
+manage. Synthesis first shelled out to a PowerShell/SAPI subprocess per
+message, then moved in-process via the WinRT Speech Synthesis API
+(<code>windows-rs</code> COM/WinRT bindings, no subprocess, no temp
+files).
+</p>
+<p class="fail">
+This worked — genuinely, with real end-to-end tests passing — but it was
+Windows-only. WinRT and classic SAPI don't exist on Linux, and this
+project needs a real Linux release build. Live synthesis also meant every
+empirical reliability finding was only as good as whatever voice a given
+machine's TTS engine defaulted to: swapping the default WinRT voice for
+testing changed which specific words came back misheard, so "reliable" was
+never a fixed, permanent property of the design — it was a property of
+today's voice.
+</p>
+
+<h3>Attempt 4 (current) — a small fixed vocabulary, pre-rendered once</h3>
+<p>
+The realization: this project doesn't actually need <em>arbitrary</em>
+live speech synthesis at all. Every message this app ever sends is built
+from the same small, closed set of words — 26 NATO letters, 10 digit
+words, a handful of field markers, and two structural separators
+(<code>Space</code>, <code>Dot</code>). Render that whole vocabulary to
+real audio exactly once, embed the result, and speaking a message becomes
+pure sample-buffer concatenation with no TTS engine, no OS API, and no
+external process involved at send time on either platform — see
+<a href="#the-current-design-in-one-pass">the design above</a>.
+</p>
+
+<div class="callout">
+<strong>What this bought:</strong> no live TTS dependency of any kind at
+runtime (so a real Linux build is possible at all), bit-identical audio on
+every install forever, and an exact, sweepable inter-clip gap instead of
+punctuation-dependent guesswork. <strong>What it cost:</strong> Subject/
+Message/Post now pay the same per-character price identifiers always did
+— every character is a whole spoken clip, not a fraction of a natural
+sentence — so free-text field limits are markedly shorter than the
+live-TTS era's.
+</div>
+
+<p>
+Building this out for real (not just in principle) surfaced three more
+concrete findings, the same "stop guessing, test with real audio" method
+this whole project has used throughout:
+</p>
+<ul>
+<li><strong>"Papa" (NATO's own word for P) came back transcribed as "Harper"</strong> in a real end-to-end test — dropping the letter silently, since neither word matched. Rather than add another homophone-tolerance entry, the vocabulary just uses a different, distinctly-sounding word for P: <code>Panda</code>.</li>
+<li><strong>The Social "author" marker went through three names before one stuck.</strong> "Author" came back as "Offer"; the next attempt, "Sender", fared no better ("Sendre", and split into "Send a"); "Writer" has held up since, and is phonetically distant from every other word in the vocabulary (deliberately, so it can't get acoustically confused with "Post").</li>
+<li><strong>Not every mismatch is a mishearing — some are just an alternate spelling of the same word Whisper heard correctly.</strong> A spoken "Yankee" has come back written as both "yanki" and, in a separate real test, "yankie" — two different informal spellings of a word Whisper actually recognized correctly. <code>phonetic.rs</code>'s decoder tolerates both the digit-homophone case (a different word, e.g. "for" for "4") and this alternate-spelling case (the same word, differently spelled) with the same small lookup table.</li>
+</ul>
+<p>
+One Fast-speed test failure ("Reddy, Ryder" for "Ready, Writer" ahead of one specific callsign) turned out to be neither of the above: widening the gap from 60ms to 100ms produced the exact same wrong transcript, ruling out blending entirely. This looks like Whisper's own cross-attention re-interpreting the whole utterance based on content later in the audio — a real, if rare, quirk of the model's architecture rather than something a word swap or gap change fixes; a different callsign in the same slot passes reliably.
+</p>
+
+<h3 id="phase-6">Phase 6 — what real, non-synthetic usage found</h3>
+<p>
+Every finding above came from this crate's own round-trip tests: assembled
+audio piped straight into Whisper, with no real speaker, microphone, PTT
+radio, or this app's own voice-activity detection anywhere in the loop.
+Actually running the app against a live radio path surfaced three more
+problems that no synthetic test could have caught:
+</p>
+<ul>
+<li><strong>The wake word "Ready" came back transcribed as "Reddy"</strong>, breaking the whole message's parse before it even reached a single field. This project hit the identical failure mode once before, in the now-deleted <code>fsk_modem</code> layer: whatever sits at sample 0 of a transmission is uniquely exposed to receiver-side squelch/AGC/VAD settling and mic/speaker onset transients in a way nothing later in the audio is. The fix is the same one that worked there — 300ms of real silence prepended before the whole message (<code>modulator.rs</code>'s <code>LEAD_IN_MS</code>), giving the receive chain time to settle before anything acoustically meaningful starts.</li>
+<li><strong>A missing <code>grid</code> marker let <code>post</code> silently absorb garbled data instead of failing the parse.</strong> <code>link</code> and <code>grid</code> used to be spoken only when the field was actually present, which made a genuinely absent field indistinguishable from a misheard marker word — and when <code>grid</code> was misheard, <code>post</code>'s value silently extended all the way to <code>complete</code>, swallowing whatever garbled fragments of the grid value came after it. Two real "partial decode" transcripts showed exactly this: a post field visibly containing fused fragments of what should have been a separate grid value. The fix: <code>link</code> and <code>grid</code> are now <em>always</em> spoken markers, even when the field is empty (spelling an empty string produces no clip tokens at all, just the marker word itself). A transcript now missing either marker is unambiguously a transcription failure, so the whole parse fails rather than returning corrupted data — the same "parse succeeds or parse fails, no partial credit" rule this format already applied everywhere else.</li>
+<li><strong>The Slow/Normal/Fast gap picker was collapsed to one fixed value.</strong> Both real failures above were reported at the fastest (100ms) setting; rather than keep three variants to reason about, the picker was removed entirely in favor of one more conservative fixed gap (200ms) — one less axis of variation when a real transmission gets misheard.</li>
+</ul>
+<p>
+Two more real reports arrived immediately after the fixes above shipped, both still on real PTT hardware:
+</p>
+<ul>
+<li><strong>"Panda" (P's word, already a replacement for the unreliable NATO "Papa") failed two more ways</strong> — transcribed as "Peter" in one real transmission, and dropped without a trace in another (an author callsign lost its leading letter; a link's ".png" extension lost its "P" and read back as ".ng"). Two <em>different</em> wrong outcomes for the same clip isn't a stable alternate spelling the way "Yankee"/"yanki" was — it means the word itself is unreliable, not just occasionally misheard, so the same fix as before applied again: swap it. P now uses <strong>"Popcorn"</strong>, a longer, more phonetically distinct word.</li>
+<li><strong>"Writer" (the AUTHOR marker) came back transcribed as "right"</strong>, breaking the whole parse. Rather than swap the word a fourth time — regenerating the clip library isn't free, and (per the finding below) isn't even perfectly reproducible — marker words got the same kind of tolerance letters/digits already had (<code>phonetic::HOMOPHONES</code>): a small <code>MARKER_ALIASES</code> table in <code>message.rs</code> that accepts known alternate transcriptions of a marker word without needing new audio at all.</li>
+</ul>
+<p>
+Also confirmed the same day: <strong>a mishearing report that turned out not to need new audio at all can still cost you a full clip-library regeneration if you change even one unrelated word.</strong> Fixing "Popcorn" meant re-rendering all 49 clips from scratch (this crate's generator always renders the whole vocabulary, not just the changed entry) — every clip is fresh TTS output, not just P's. The full real round-trip suite was re-run against the new <code>clips.bin</code> before trusting it, per this crate's own standing rule that clip generation isn't bit-for-bit reproducible run to run.
+</p>
+
+<h3 id="phase-8">Phase 8 — constraining decode to this crate's own vocabulary</h3>
+<p>
+Every fix through Phase 6/7 treated a specific mishearing after the fact: tolerate a known alternate transcription, or swap the underlying word. But free-form Whisper decode can, in principle, output <em>any</em> English word for a degraded clip — "Writer" → "right", "Panda" → "Peter", the wake word "Ready" → "Ita" in one report — and there's no way to fully enumerate every wrong word a real, noisy radio path might eventually provoke. Chasing each one individually is unbounded.
+</p>
+<p>
+<code>decoder.rs</code>'s decode loop was already hand-written token-by-token (a manual greedy <code>argmax</code> over the model's logits at each step, not a canned high-level "transcribe" call) rather than using a library's built-in generation function — which meant the exact hook needed to fix this at the root was already there. The loop now builds a small trie, once at load time, from the BPE tokenization of every vocabulary word (both title-cased and lowercase, since Whisper's own casing choice for a given word isn't consistent) via <code>WordGrammar</code>, and at every generation step masks the model's logits down to only the tokens that keep the output a legal continuation of some known word. The model is <em>structurally</em> unable to emit "Ita" or "right" or any other out-of-vocabulary word ever again — it can still pick the wrong <em>known</em> word, but never an unknown one.
+</p>
+<div class="callout">
+<strong>Why this isn't Attempt 2 again:</strong> this project already tried constrained decoding once, in the abandoned 2048-word bit-packed dictionary scheme, and that had real, separate problems — weak, phonetically-reduced function words landing on bit-significant codes, so even with hallucination eliminated, per-word accuracy still broke a payload's checksum. Nothing here is bit-packed and the vocabulary is ~25x smaller (49 words vs. 2048), so one wrong word costs one character, not a whole message. The technique that fixed hallucination there is being reused here for a different, much cheaper-to-tolerate problem.
+</div>
+<p>
+A new test, <code>transcript_never_contains_a_word_outside_the_vocabulary</code>, asserts exactly that property directly against a real decode, not just indirectly through parsing success. Every existing real round-trip test (Mail, Social with/without optional fields, the Reddy/Ryder regression case) stayed green against the new decode path with no changes needed elsewhere — the fix lives entirely inside <code>decoder.rs</code>.
+</p>
+
+<h2>What actually changed, crate by crate</h2>
+<table class="history-table">
+<tr><th>Then</th><th>Now</th></tr>
+<tr><td>hsm_modem / tone_modem / fsk_modem</td><td>deleted — no PHY layer at all; assembled speech <em>is</em> the transmitted signal</td></tr>
+<tr><td>cfs_fec (RaptorQ fountain coding, CRC droplets)</td><td>deleted — no redundancy layer; marker-word parsing either finds every marker or it doesn't</td></tr>
+<tr><td>media_codec (zstd/image compression, binary envelopes, kind-tag dispatch)</td><td>deleted — a message is spoken plain text, not a compressed byte payload</td></tr>
+<tr><td>Live TTS (PowerShell/SAPI subprocess, then in-process WinRT)</td><td>deleted from the runtime path entirely — <code>dev_tts.rs</code> survives only as a Windows-only, opt-in dev tool for one-time clip generation</td></tr>
+<tr><td>lexicon_modem: 2048-word dictionary + bit-packing + constrained decode</td><td>lexicon_modem: <code>vocabulary.rs</code> (the fixed word list), <code>clips.rs</code> (embedded audio lookup), <code>modulator.rs</code> (pure-Rust clip assembly + gap), <code>phonetic.rs</code> (spell/unspell for every field), <code>message.rs</code> (marker-word token framing), <code>decoder.rs</code> (Whisper transcription, grammar-constrained to this crate's own ~49-word vocabulary — see Phase 8)</td></tr>
+<tr><td>Raw mode (arbitrary file transfer)</td><td>removed from the GUI entirely — there's no binary envelope left to carry one</td></tr>
+<tr><td>Mail: From/To/Location/Subject/Body + one binary attachment</td><td>Mail: From/To/Location/Subject/Message, no attachment</td></tr>
+<tr><td>Social: Author/Body/Timestamp/MediaURL/OriginGrid, binary-encoded</td><td>Social: Writer(→author)/Post/Link/Grid, spelled out clip-by-clip (URL host prefix stripped before speaking, reattached on receive)</td></tr>
+<tr><td>Per-mode kind tag byte for catch-all receive routing</td><td>no tag needed — a transcript is tried against both modes' marker-word parsers and whichever one matches wins</td></tr>
+<tr><td>"Signal quality" percentage (redundancy-derived)</td><td>gone — parsing a transcript either succeeds or it doesn't; there's no partial-credit metric left to show</td></tr>
+<tr><td>TTS playback speed (Slow/Normal/Fast, SAPI rate)</td><td>one fixed inter-clip silence gap (200ms) plus a 300ms lead-in before the whole message — an exact number, not engine-interpreted punctuation, and no user-facing picker anymore</td></tr>
+</table>
+
+<h2>Design principles that carried through every rewrite</h2>
+<ul>
+<li><strong>Voice-channel only.</strong> No data-channel or API assumption on the far end — if a radio can carry a voice call, it can carry POC-COM traffic.</li>
+<li><strong>No volume controls, no passthrough.</strong> Structural, not policy: there's no code path anywhere that reads an input stream and writes it to an output stream.</li>
+<li><strong>Empirical over theoretical.</strong> Every parameter this project has ever tuned — band edges, symbol duration, redundancy overhead, inter-clip gap, even which word to use for a given letter — was tuned against direct measurement (first simulated, later real hardware and real models), not derived purely from theory.</li>
+<li><strong>Stop fighting the channel; become the signal it's built to carry.</strong> The throughline across every PHY attempt, and the whole reason this document exists.</li>
+<li><strong>Ship on every platform you promise, not just the one that was easiest to build on first.</strong> The reason Attempt 3 didn't survive despite working — a real Linux build isn't optional, so a Windows-only runtime dependency wasn't acceptable no matter how well it tested.</li>
+</ul>
+
+<h2>Honest current limits</h2>
+<ul>
+<li>No forward error correction of any kind. A misheard marker word breaks that field's parse (or the whole message's, if a marker itself is missed). Grammar-constrained decode (Phase 8) eliminated the out-of-vocabulary class of mishearing structurally, but a degraded clip can still be decoded as the wrong <em>known</em> word (e.g. one letter confused for an acoustically similar one) — that residual risk is what the marker-word framing and per-word tolerance tables still exist to catch.</li>
+<li>Every character of every field now costs one whole spoken clip plus a gap — there's no natural-sentence speaking rate to lean on anymore, hence the deliberately short per-field character caps in <code>pipeline.rs</code> (12/12/24/60/60 for From/To/Subject/Message/Post).</li>
+<li>Real over-the-air PTT testing has now happened (see <a href="#phase-6">Phase 6</a>) and found real problems this crate's own offline round-trip tests structurally could not — onset clipping on the wake word, and a marker-absence ambiguity in Social's grid/link fields. Both are fixed and covered by new real round-trip tests, but the same discipline applies going forward: every future finding should come from testing against a real radio and microphone, not just an assembled-audio→Whisper pipe. The Linux build has now actually been compiled and run on a real Linux machine (WSL Ubuntu) — the full workspace test suite, including every real end-to-end round trip, passes natively there, confirming the design intent (no `windows` crate anywhere in the default feature set) actually holds up in practice, not just in theory.</li>
+<li>The <code>link</code> field (a Social attachment's shortened URL suffix) and the free-text fields (Subject/Message/Post) get the same spell/unspell treatment as identifiers, but have had less adversarial real-world testing than From/To/Location/Grid specifically — the three real findings above all surfaced through identifier and marker-word testing.</li>
+<li>Clip generation itself isn't perfectly reproducible run-to-run (confirmed: regenerating the full vocabulary after an unrelated word change shifted which <em>other</em>, untouched words transcribed reliably) — each checked-in <code>assets/clips.bin</code> needs the real round-trip test suite run against it specifically before being trusted, not assumed identical to a previous generation.</li>
+</ul>
+
+<footer>
+POC-COM — see the project <a href="../README.md">README</a> for build instructions and current project layout.
+</footer>
+
+</body>
+</html>
