@@ -1,0 +1,25 @@
+[package]
+name = "app_gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "POC-COM GUI: Mail/Social modes, no volume controls, no passthrough"
+
+[[bin]]
+name = "poc_com"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow"] }
+egui = "0.29"
+rfd = "0.15"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+ureq = { version = "2", default-features = false, features = ["tls"] }
+webbrowser = "1"
+
+lexicon_modem = { path = "../lexicon_modem" }
+audio_io = { path = "../audio_io" }
+rustfft = "6"
+
+[build-dependencies]
+embed-resource = "3"
