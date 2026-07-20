@@ -33,7 +33,7 @@ feature — see [Design principles](#design-principles).
 
 ## How it works
 
-See the [technical writeup](docs/lexicon_modulation.html) for the full
+See the [technical writeup](https://wey2shop.github.io/POC-COM/lexicon_modulation.html) for the full
 story of how this app got here (it went through four very different
 designs before landing on this one), but the current design in one
 paragraph:
@@ -167,7 +167,7 @@ result, and `app.rs` routes whichever one matches into that mode's list).
   language-model prior (which "corrects" disconnected words into
   fluent-sounding nonsense). Real speech clips, spoken in a small,
   well-tested vocabulary, sidestep both fights at once — see
-  [the technical writeup](docs/lexicon_modulation.html) for the full
+  [the technical writeup](https://wey2shop.github.io/POC-COM/lexicon_modulation.html) for the full
   history.
 - **Marker words, not fixed frames.** There's no bit-packing, no checksum,
   no block/frame structure. A message is exactly the words a listener
